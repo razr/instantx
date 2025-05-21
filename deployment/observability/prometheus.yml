@@ -8,7 +8,7 @@ scrape_configs:
 
   - job_name: 'hivemq'
     static_configs:
-      - targets: ['hivemq_ce:9399']
+      - targets: ['mqtt:9399']
 
   - job_name: 'nifi'
     fallback_scrape_protocol: PrometheusText0.0.4
