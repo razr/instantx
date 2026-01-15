@@ -11,12 +11,14 @@ from binascii import hexlify
 from prometheus_client import start_http_server, Counter
 from waitress import serve
 import asn1tools
+from asn1tools.errors import CompileError
 import os
 import config
 import time
 import random
 import logging
 import paho.mqtt.client as mqtt
+from binascii import unhexlify
 
 app = Flask(__name__)
 
@@ -28,19 +30,29 @@ logging.basicConfig(level=logging.INFO,
                         logging.StreamHandler()
                     ])
 
+# ASN.1 setup
+DATA_FOLDER = os.path.join(os.path.dirname(__file__), 'asn')
+asn1_files = [os.path.join(DATA_FOLDER, f) for f in os.listdir(DATA_FOLDER) if f.endswith('.asn')]
+
+try:
+    encoder = asn1tools.compile_files(
+        asn1_files,
+        codec='uper',
+        any_defined_by_choices=None,
+        encoding='utf-8',
+        numeric_enums=False
+    )
+    app.logger.info("ASN.1 files compiled successfully")
+except CompileError as e:
+    encoder = None
+    app.logger.error("Failed to compile ASN.1 files: %s", e)
+
 # MQTT client configuration
 mqtt_client = mqtt.Client()
 if hasattr(config, 'MQTT_USERNAME'):
     mqtt_client.username_pw_set(config.MQTT_USERNAME, config.MQTT_PASSWORD)
 mqtt_client.connect("localhost", 1883, keepalive=60)
 mqtt_client.loop_start()  # start background network thread
-
-# ASN.1 setup
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), 'asn')
-asn1_files = [os.path.join(DATA_FOLDER, f) for f in os.listdir(DATA_FOLDER) if f.endswith('.asn')]
-encoder = asn1tools.compile_files(
-    asn1_files, codec='uper', any_defined_by_choices=None, encoding='utf-8', numeric_enums=False
-)
 
 # Prometheus metric
 REQUEST_COUNT = Counter(config.MESSAGES_COUNT_METRICS, 'Number of messages processed', ['sub_service'])
@@ -56,10 +68,42 @@ def publish_message(sub_service, sub_service_group, geohash):
     geohash_topic = '/'.join(list(geohash))
     key = f'v2x/{sub_service}/{sub_service_group}/g{geo_level}/{geohash_topic}'
     app.logger.info("MQTT topic: %s", key)
+ 
+    def convert_choices(d):
+        if isinstance(d, list) and len(d) == 2 and isinstance(d[0], str):
+            # Convert outer list -> tuple
+            return (d[0], convert_choices(d[1]))
+        elif isinstance(d, dict):
+            return {k: convert_choices(v) for k, v in d.items()}
+        elif isinstance(d, list):
+            return [convert_choices(x) for x in d]
+        else:
+            return d
 
     # Get JSON data from the request body
     data = request.get_json()
-    sub_service_upper = sub_service.upper()
+    # Convert sourceID hex string to bytes
+    if 'sourceID' in data:
+        try:
+            data['sourceID'] = unhexlify(data['sourceID'])
+        except Exception as e:
+            app.logger.error("Failed to convert sourceID to bytes: %s", e)
+
+    # Convert detObjOptData CHOICEs
+    for obj in data.get('objects', []):
+        det_data = obj.get('detObjOptData')
+        if det_data:
+            obj['detObjOptData'] = convert_choices(det_data)
+
+    j2735_type_map = {
+        'sdsm': 'SensorDataSharingMessage',
+    }
+    sub_service_key = j2735_type_map.get(sub_service.lower())
+    if sub_service_key is None:
+        sub_service_upper = sub_service.upper()
+    else:
+        sub_service_upper = sub_service_key
+
     encoded = encoder.encode(sub_service_upper, data)
     message = hexlify(encoded).decode('ascii')
 
