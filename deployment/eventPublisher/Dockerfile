@@ -1,16 +1,8 @@
 # Use an appropriate base image
-FROM python:3.9-alpine
-
-# Install librdkafka and other dependencies
-RUN apk add --no-cache \
-    librdkafka-dev \
-    gcc \
-    musl-dev \
-    libc-dev \
-    linux-headers
+FROM python:3.9-slim
 
 # Create a non-root user and group with specific ID for consistency
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 # Set the working directory
 WORKDIR /app
