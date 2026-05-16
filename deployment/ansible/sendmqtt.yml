@@ -6,7 +6,7 @@
   tasks:
     - name: Start background MQTT subscriber to capture the payload
       shell: |
-        mosquitto_sub -h localhost -p 1883 -t '#' -v -C 1 > /tmp/mqtt_captured.log
+        mosquitto_sub -h 127.0.0.1 -p 1883 -t '#' -v -C 1 > /tmp/mqtt_captured.log
       async: 45
       poll: 0
       register: mqtt_subscriber
