@@ -48,6 +48,13 @@ services:
     restart: always
     networks:
       - nifi_network
+    healthcheck:
+      # Health API is not supported
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9399/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # ---------------------------------------------
   # Apache Kafka
