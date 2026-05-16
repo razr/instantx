@@ -1,0 +1,64 @@
+name: InstantX Integration Stack
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-24.04
+
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # FIXED: Removed 'docker-compose' to protect the pre-installed Compose V2 engine
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ansible \
+            curl \
+            jq \
+            netcat-openbsd
+
+      - name: Show versions
+        run: |
+          docker --version
+          docker compose version
+          ansible --version
+
+      - name: Run Ansible playbook
+        working-directory: deployment/ansible
+        run: |
+          ansible-playbook -i inventory.ini playbook.yml
+
+      # Ensure the containers actually booted cleanly and connectors are live
+      - name: Verify Connector Pipeline Health
+        working-directory: deployment
+        run: |
+          echo "Waiting for stack initialization loop..."
+          sleep 20
+          docker compose ps
+          
+          echo "Verifying registered Kafka Connectors:"
+          curl -s http://localhost:8083/connectors | jq .
+
+      - name: Dump container logs on failure
+        if: failure()
+        working-directory: deployment
+        run: |
+          docker compose ps --all
+          docker compose logs --no-color
+
+      - name: Cleanup
+        if: always()
+        working-directory: deployment
+        run: |
+          docker compose down -v
+

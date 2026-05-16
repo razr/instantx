@@ -1,0 +1,129 @@
+---
+- name: Start InstantX stack
+  hosts: local
+  become: false
+
+  vars:
+    compose_dir: "{{ playbook_dir }}/.."
+
+  tasks:
+
+    - name: Start docker compose stack
+      shell: |
+        docker compose up -d --build
+      args:
+        chdir: "{{ compose_dir }}"
+
+    - name: Wait for Kafka
+      wait_for:
+        host: localhost
+        port: 9092
+        timeout: 300
+
+    - name: Wait for Kafka Connect
+      wait_for:
+        host: localhost
+        port: 8083
+        timeout: 300
+
+    - name: Wait for NiFi
+      wait_for:
+        host: localhost
+        port: 8090
+        timeout: 300
+
+    - name: Wait for Prometheus
+      wait_for:
+        host: localhost
+        port: 9090
+        timeout: 300
+
+    - name: Wait for Grafana
+      wait_for:
+        host: localhost
+        port: 3000
+        timeout: 300
+
+    - name: Wait for MQTT
+      wait_for:
+        host: localhost
+        port: 1883
+        timeout: 300
+
+    - name: Wait for Zookeeper
+      wait_for:
+        host: localhost
+        port: 2181
+        timeout: 300
+
+    - name: Wait for NiFi Registry
+      wait_for:
+        host: localhost
+        port: 18080
+        timeout: 300
+
+    - name: Wait for API Service
+      wait_for:
+        host: localhost
+        port: 5000
+        timeout: 300
+
+    - name: Wait for Kafka Speed Exporter
+      wait_for:
+        host: localhost
+        port: 8010
+        timeout: 300
+
+    - name: Verify Docker containers
+      shell: docker ps
+      register: docker_ps
+
+    - name: Show running containers
+      debug:
+        var: docker_ps.stdout_lines
+
+    - name: Check HTTP endpoints
+      uri:
+        url: "{{ item }}"
+        method: GET
+        status_code: [200, 302]
+        timeout: 30
+      loop:
+        - http://localhost:3000
+        - http://localhost:9090
+        - http://localhost:8083
+        - http://localhost:8090/nifi
+        - http://localhost:18080
+
+    - name: Fetch active Kafka Connectors list
+      uri:
+        url: http://localhost:8083/connectors
+        method: GET
+        return_content: true
+        status_code: 200
+      register: connect_list_response
+
+    - name: Verify MQTTSinkConnector is active
+      assert:
+        that:
+          - "'MQTTSinkConnector' in connect_list_response.json"
+        fail_msg: "❌ MQTTSinkConnector is missing from the cluster!"
+        success_msg: "✅ MQTTSinkConnector verified successfully."
+
+    - name: Verify MQTTSourceConnector is active
+      assert:
+        that:
+          - "'MQTTSourceConnector' in connect_list_response.json"
+        fail_msg: "❌ MQTTSourceConnector is missing from the cluster!"
+        success_msg: "✅ MQTTSourceConnector verified successfully."
+
+    - name: Verify Connector Task Statuses
+      uri:
+        url: "http://localhost:8083/connectors/{{ item }}/status"
+        method: GET
+      register: connector_status
+      failed_when: "connector_status.json.tasks | length == 0 or (connector_status.json.tasks | map(attribute='state') | select('ne', 'RUNNING') | list | length > 0)"
+      loop:
+        - MQTTSinkConnector
+        - MQTTSourceConnector
+
