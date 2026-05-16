@@ -29,6 +29,8 @@ services:
       - ./observability/grafana-provisioning/datasources:/etc/grafana/provisioning/datasources
     depends_on:
       - prometheus
+    networks:
+      - default
 
   # ---------------------------------------------
   # Broker (MQTT) - HiveMQ CE
@@ -314,6 +316,8 @@ services:
       - nifi_network
 
 networks:
+  default:
+    driver: bridge
   nifi_network:
     driver: bridge
 
