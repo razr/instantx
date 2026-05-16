@@ -93,7 +93,7 @@
         - http://localhost:9090
         - http://localhost:8083
         - http://localhost:8090/nifi
-        - http://localhost:18080
+        - http://localhost:18080/nifi-registry
 
     - name: Fetch active Kafka Connectors list
       uri:
