@@ -25,7 +25,8 @@ jobs:
             ansible \
             curl \
             jq \
-            netcat-openbsd
+            netcat-openbsd \
+            mosquitto-clients
 
       - name: Show versions
         run: |
@@ -37,6 +38,7 @@ jobs:
         working-directory: deployment/ansible
         run: |
           ansible-playbook -i inventory.ini playbook.yml
+          ansible-playbook -i inventory.ini sendmqtt.yml
 
       # Ensure the containers actually booted cleanly and connectors are live
       - name: Verify Connector Pipeline Health
@@ -46,9 +48,6 @@ jobs:
           sleep 20
           docker compose ps
           
-          echo "Verifying registered Kafka Connectors:"
-          curl -s http://localhost:8083/connectors | jq .
-
       - name: Dump container logs on failure
         if: failure()
         working-directory: deployment

@@ -1,0 +1,89 @@
+---
+- name: Execute End-to-End V2X Integration Test
+  hosts: local
+  become: false
+  
+  tasks:
+    - name: Start background MQTT subscriber to capture the payload
+      shell: |
+        mosquitto_sub -h localhost -p 1883 -t 'v2x/denm/public/#' -v -C 1 > /tmp/mqtt_captured.log
+      async: 30
+      poll: 0
+      register: mqtt_subscriber
+
+    - name: Give the subscriber a brief moment to open its socket interface
+      pause:
+        seconds: 2
+
+    - name: Publish the DENM JSON message event via API
+      uri:
+        url: http://localhost:5000/api/publish/denm/public/7y0191k4
+        method: POST
+        body_format: json
+        status_code: 200
+        body:
+          header:
+            protocolVersion: 2
+            messageID: 1
+            stationID: 123456
+          denm:
+            management:
+              actionID:
+                originatingStationID: 123456
+                sequenceNumber: 1
+              detectionTime: 649940045094
+              referenceTime: 649940045094
+              eventPosition:
+                latitude: 367225309
+                longitude: -43965883
+                positionConfidenceEllipse:
+                  semiMajorConfidence: 4095
+                  semiMinorConfidence: 4095
+                  semiMajorOrientation: 3601
+                altitude:
+                  altitudeValue: 0
+                  altitudeConfidence: "unavailable"
+              relevanceDistance: "lessThan500m"
+              validityDuration: 60
+              stationType: 10
+            situation:
+              informationQuality: 0
+              eventType:
+                causeCode: 95
+                subCauseCode: 0
+            location:
+              eventPositionHeading:
+                headingValue: 0
+                headingConfidence: 127
+              traces:
+                - - pathPosition:
+                      deltaLatitude: 2117
+                      deltaLongitude: 5821
+                      deltaAltitude: 0
+      register: api_publish_response
+
+    - name: Wait for background MQTT subscriber to capture message and exit cleanly
+      async_status:
+        jid: "{{ mqtt_subscriber.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 10
+      delay: 1
+
+    - name: Read the captured MQTT payload output log
+      command: cat /tmp/mqtt_captured.log
+      register: mqtt_log_content
+      failed_when: false
+
+    - name: Show captured MQTT stream output data
+      debug:
+        var: mqtt_log_content.stdout_lines
+
+    - name: Assert end-to-end integration pipeline success
+      assert:
+        that:
+          - "'v2x/denm/public/g8/7/y/0/1/9/1/k/4' in mqtt_log_content.stdout"
+          - "'02010001e240c50000f120000092ea6e41a4c4ba9b906934b8852dd68aaf445ffffffe11186a0f6003c0a00be004001f8028211216bc6338' in mqtt_log_content.stdout"
+        fail_msg: "❌ Integration Failure: Message did not route correctly to MQTT!"
+        success_msg: "🎉 Integration Success: End-to-end V2X pipeline verified!"
+
