@@ -90,6 +90,7 @@ services:
       interval: 2s
       timeout: 60s
       retries: 15
+      start_period: 15s
     networks:
       - nifi_network
 
