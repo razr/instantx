@@ -148,9 +148,39 @@ services:
         done
         echo "Connect is up! Registering connectors..."
 
-        curl -X PUT -H "Content-Type: application/json" --data @/mqtt-sink-connector.json http://connect:8083/connectors/mqtt-sink-connector/config
-        curl -X PUT -H "Content-Type: application/json" --data @/mqtt-source-connector.json http://connect:8083/connectors/mqtt-source-connector/config
-        echo "Connectors registered successfully! ✅"
+        curl -X POST -H "Content-Type: application/json" --data @/mqtt-sink-connector.json http://connect:8083/connectors
+        curl -X POST -H "Content-Type: application/json" --data @/mqtt-source-connector.json http://connect:8083/connectors
+
+        echo "Verifying registration state... 🔍"
+        sleep 3
+        REGISTERED=$$(curl -s http://connect:8083/connectors)
+
+        # Extract the exact connector names from the files dynamically using sed
+        EXPECTED_SINK=$$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /mqtt-sink-connector.json)
+        EXPECTED_SOURCE=$$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /mqtt-source-connector.json)
+
+        echo "Extracted names: Sink='$$EXPECTED_SINK', Source='$$EXPECTED_SOURCE'"
+
+        # Verify Sink Connector first
+        if echo "$$REGISTERED" | grep -q "$$EXPECTED_SINK"; then
+            echo "✅ Connector '$$EXPECTED_SINK' verified inside active cluster."
+        else
+            echo "❌ Error: Connector '$$EXPECTED_SINK' failed to register!"
+            echo "Current active cluster list: $$REGISTERED"
+            exit 1
+        fi
+
+        # Verify Source Connector next
+        if echo "$$REGISTERED" | grep -q "$$EXPECTED_SOURCE"; then
+            echo "✅ Connector '$$EXPECTED_SOURCE' verified inside active cluster."
+        else
+            echo "❌ Error: Connector '$$EXPECTED_SOURCE' failed to register!"
+            echo "Current active cluster list: $$REGISTERED"
+            exit 1
+        fi
+
+        echo "All connectors verified successfully! Exiting cleanly. 🎉"
+        exit 0
 
   # ---------------------------------------------
   # API Service (Example)
