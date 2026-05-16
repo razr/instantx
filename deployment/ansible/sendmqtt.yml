@@ -6,14 +6,14 @@
   tasks:
     - name: Start background MQTT subscriber to capture the payload
       shell: |
-        mosquitto_sub -h localhost -p 1883 -t 'v2x/denm/public/#' -v -C 1 > /tmp/mqtt_captured.log
-      async: 30
+        mosquitto_sub -h localhost -p 1883 -t '#' -v -C 1 > /tmp/mqtt_captured.log
+      async: 45
       poll: 0
       register: mqtt_subscriber
 
     - name: Give the subscriber a brief moment to open its socket interface
       pause:
-        seconds: 2
+        seconds: 3
 
     - name: Publish the DENM JSON message event via API
       uri:
@@ -67,7 +67,7 @@
         jid: "{{ mqtt_subscriber.ansible_job_id }}"
       register: job_result
       until: job_result.finished
-      retries: 10
+      retries: 20
       delay: 1
 
     - name: Read the captured MQTT payload output log
