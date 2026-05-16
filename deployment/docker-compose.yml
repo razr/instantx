@@ -113,25 +113,37 @@ services:
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_PLUGIN_PATH: "/etc/kafka-connect/jars,/usr/share/java/"
-    command:
-      - bash
-      - -c
-      - |
-        echo "Launching Kafka Connect worker"
-        /etc/confluent/docker/run &
-        #
-        sleep 100 &&
-        curl -X POST -H "Content-Type: application/json" --data @/mqtt-sink-connector.json http://connect:8083/connectors &&
-        curl -X POST -H "Content-Type: application/json" --data @/mqtt-source-connector.json http://connect:8083/connectors &&
-        sleep infinity
     volumes:
       - ./kafka-connect/connectors:/etc/kafka-connect/jars
-      - ./kafka-connect/flows/mqtt-sink-connector.json:/mqtt-sink-connector.json
-      - ./kafka-connect/flows/mqtt-source-connector.json:/mqtt-source-connector.json
     depends_on:
       - kafka
     networks:
       - nifi_network
+
+  # ---------------------------------------------
+  # Connector init (Runs once, then exits)
+  connect-init:
+    image: curlimages/curl:latest
+    container_name: instantx_kafka-connect-init
+    depends_on:
+      - connect
+    networks:
+      - nifi_network
+    volumes:
+      - ./kafka-connect/flows/mqtt-sink-connector.json:/mqtt-sink-connector.json
+      - ./kafka-connect/flows/mqtt-source-connector.json:/mqtt-source-connector.json
+    entrypoint: [ "sh", "-c" ]
+    command:
+      - |
+        echo "Waiting for Kafka Connect to start... ⏳"
+        until [ $$(curl -s -o /dev/null -w %{http_code} http://connect:8083/connectors) -eq 200 ] ; do
+          sleep 5
+        done
+        echo "Connect is up! Registering connectors..."
+
+        curl -X PUT -H "Content-Type: application/json" --data @/mqtt-sink-connector.json http://connect:8083/connectors/mqtt-sink-connector/config
+        curl -X PUT -H "Content-Type: application/json" --data @/mqtt-source-connector.json http://connect:8083/connectors/mqtt-source-connector/config
+        echo "Connectors registered successfully! ✅"
 
   # ---------------------------------------------
   # API Service (Example)
