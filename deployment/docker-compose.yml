@@ -52,11 +52,34 @@ services:
       - nifi_network
     healthcheck:
       # Health API is not supported
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9399/metrics"]
+      test: >
+        bash -c '
+        # PHASE 1: Check if the main MQTT port is open
+        if ! timeout 1 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/1883" 2>/dev/null; then
+
+          # SAFETY CHECK: If the port is closed, make sure the Java process is still alive!
+          if ! pgrep -f hivemq > /dev/null; then
+            echo "HiveMQ process completely died during boot! Failure.";
+            exit 1; # Signals immediate failure to Docker (stops trying)
+          fi;
+
+          echo "HiveMQ MQTT port is closed. Process is alive, still booting...";
+          exit 1; # Keeps container in "starting" phase during start_period
+        fi;
+
+        # PHASE 2: Main port is open, now verify if the metrics endpoint responds
+        if curl --fail --silent http://127.0.0 > /dev/null; then
+          echo "HiveMQ is healthy and metrics are responding.";
+          exit 0; # Healthy
+        } else {
+          echo "MQTT port is open but metrics endpoint is dead. Stuck!";
+          exit 1; # Unhealthy
+        fi
+        '
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 120s
 
   # ---------------------------------------------
   # Apache Kafka
